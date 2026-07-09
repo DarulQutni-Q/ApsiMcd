@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Everforest Light Theme */
+    /* 1. Base/Background: Soft earthy off-white */
+    --background: 45 42% 92%; /* #fdf6e3 */
+    
+    /* 2. Text/Contrast: Deep charcoal/dark-green */
+    --foreground: 200 23% 29%; /* #3a515d */
+    
+    /* 3. Primary/Accent: Everforest Green */
+    --primary: 90 28% 62%; /* #a7c080 */
+    --primary-foreground: 45 42% 92%;
+
+    /* Structural semantics */
+    --card: 45 42% 92%;
+    --card-foreground: 200 23% 29%;
+    --popover: 45 42% 92%;
+    --popover-foreground: 200 23% 29%;
+    
+    --muted: 45 30% 85%; /* Slightly darker background for separation */
+    --muted-foreground: 200 15% 45%; /* Softer text */
+
+    --border: 45 30% 80%; /* Subtle lines */
+    --input: 45 30% 80%;
+    --ring: 90 28% 62%; /* Primary green for focus rings */
+
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    /* Everforest Dark Theme */
+    --background: 216 19% 19%; /* #2b3339 */
+    --foreground: 45 42% 92%; /* #fdf6e3 */
+    
+    --primary: 90 28% 62%; /* #a7c080 */
+    --primary-foreground: 216 19% 19%;
+
+    --card: 216 19% 19%;
+    --card-foreground: 45 42% 92%;
+    --popover: 216 19% 19%;
+    --popover-foreground: 45 42% 92%;
+    
+    --muted: 216 15% 25%;
+    --muted-foreground: 200 15% 65%;
+
+    --border: 216 15% 30%;
+    --input: 216 15% 30%;
+    --ring: 90 28% 62%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+.bg-everforest-pattern {
+  background-image: radial-gradient(hsl(var(--muted)) 1px, transparent 1px);
+  background-size: 24px 24px;
+}

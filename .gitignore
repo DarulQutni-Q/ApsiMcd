@@ -1,0 +1,10 @@
+node_modules/
+.next/
+.env.local
+test-results/
+playwright-report/
+.opencode/
+.claude/
+CLAUDE.md
+AGENTS.md
+
