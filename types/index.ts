@@ -1,11 +1,22 @@
 export type UserRole = 'kitchen' | 'cashier' | 'admin';
-export type OrderStatus = 'pending' | 'preparing' | 'ready' | 'completed';
+export type OrderStatus = 'pending' | 'preparing' | 'ready' | 'completed' | 'cancelled';
 
 export interface User {
   id: string;
   username: string;
   role: UserRole;
   // passcode is INTENTIONALLY omitted from the client interface for security
+}
+
+export interface MenuOption {
+  label: string;
+  price_delta: number; // add-on to base price; 0 = no change
+}
+
+export interface MenuOptionGroup {
+  name: string; // e.g. "Daging", "Ukuran", "Rasa"
+  required: boolean;
+  options: MenuOption[];
 }
 
 export interface Menu {
@@ -15,6 +26,13 @@ export interface Menu {
   price: number;
   image_url: string;
   is_active: boolean;
+  option_groups?: MenuOptionGroup[]; // configurable choices shown at kiosk
+}
+
+export interface SelectedOption {
+  group: string;
+  choice: string;
+  price_delta: number;
 }
 
 export interface Promo {
@@ -32,6 +50,8 @@ export interface OrderItem {
   qty: number;
   subtotal_price: number;
   is_checked: boolean; // For Kitchen interactive checklist
+  is_rejected?: boolean; // marked "habis" by kitchen
+  selected_options?: SelectedOption[]; // chosen modifiers (meat/size/flavor)
   menus?: Menu; // Relational JOIN mapping
 }
 
@@ -44,5 +64,6 @@ export interface Order {
   total_price: number;
   status: OrderStatus;
   created_at: string;
+  payment_method?: string; // Set when cashier completes the order
   order_items?: OrderItem[]; // Relational JOIN mapping
 }

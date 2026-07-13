@@ -66,3 +66,49 @@
   background-image: radial-gradient(hsl(var(--muted)) 1px, transparent 1px);
   background-size: 24px 24px;
 }
+
+@keyframes row-highlight {
+  from { background-color: hsl(var(--primary) / 0.35); }
+  to { background-color: transparent; }
+}
+
+.highlight-new {
+  animation: row-highlight 3s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .highlight-new {
+    animation: none;
+    background-color: hsl(var(--primary) / 0.2);
+  }
+}
+
+/* Print only the receipt / report area */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #print-receipt,
+  #print-receipt *,
+  #report-print,
+  #report-print * {
+    visibility: visible;
+  }
+  #print-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 80mm;
+    margin: 0;
+    box-shadow: none !important;
+  }
+  #report-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

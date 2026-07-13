@@ -1,13 +1,15 @@
 import { create } from 'zustand';
 import { isWeekend } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
-import type { Menu, Promo, Order } from '@/types';
+import type { Menu, Promo, Order, SelectedOption } from '@/types';
 
 const JAKARTA_TZ = 'Asia/Jakarta';
 
-interface CartItem {
+export interface CartItem {
+  lineId: string;
   menu: Menu;
   qty: number;
+  selectedOptions: SelectedOption[];
 }
 
 interface KioskState {
@@ -17,9 +19,9 @@ interface KioskState {
   activeCategory: string | null;
   selectedMenuId: string | null;
   
-  addItem: (menu: Menu) => void;
-  removeItem: (menuId: string) => void;
-  updateQty: (menuId: string, qty: number) => void;
+  addItem: (menu: Menu, selectedOptions?: SelectedOption[]) => void;
+  removeItem: (lineId: string) => void;
+  updateQty: (lineId: string, qty: number) => void;
   clearCart: () => void;
   
   checkWeekendPromo: (promo: Promo) => void;
@@ -34,6 +36,27 @@ interface KioskState {
 
 const TAX_RATE = 0.10;
 
+/** Unit price = base + sum of chosen option deltas. */
+export function lineUnitPrice(item: CartItem): number {
+  return item.menu.price + item.selectedOptions.reduce((s, o) => s + (o.price_delta || 0), 0);
+}
+
+/** Stable signature to merge identical lines (same menu + same options). */
+function optionSignature(menuId: string, opts: SelectedOption[]): string {
+  const parts = [...opts]
+    .map((o) => `${o.group}=${o.choice}`)
+    .sort();
+  return `${menuId}|${parts.join('|')}`;
+}
+
+function makeLineId(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `line-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+}
+
 export const useKioskStore = create<KioskState>((set, get) => ({
   items: [],
   activePromo: null,
@@ -44,23 +67,24 @@ export const useKioskStore = create<KioskState>((set, get) => ({
   setActiveCategory: (cat) => set({ activeCategory: cat }),
   setSelectedMenuId: (id) => set({ selectedMenuId: id }),
 
-  addItem: (menu) => set((state) => {
-    const existing = state.items.find(i => i.menu.id === menu.id);
+  addItem: (menu, selectedOptions = []) => set((state) => {
+    const sig = optionSignature(menu.id, selectedOptions);
+    const existing = state.items.find(i => optionSignature(i.menu.id, i.selectedOptions) === sig);
     if (existing) {
       const newQty = Math.min(existing.qty + 1, 99);
-      return { items: state.items.map(i => i.menu.id === menu.id ? { ...i, qty: newQty } : i) };
+      return { items: state.items.map(i => i.lineId === existing.lineId ? { ...i, qty: newQty } : i) };
     }
-    return { items: [...state.items, { menu, qty: 1 }] };
+    return { items: [...state.items, { lineId: makeLineId(), menu, qty: 1, selectedOptions }] };
   }),
 
-  removeItem: (menuId) => set((state) => ({
-    items: state.items.filter(i => i.menu.id !== menuId)
+  removeItem: (lineId) => set((state) => ({
+    items: state.items.filter(i => i.lineId !== lineId)
   })),
 
-  updateQty: (menuId, qty) => set((state) => {
-    if (qty <= 0) return { items: state.items.filter(i => i.menu.id !== menuId) };
+  updateQty: (lineId, qty) => set((state) => {
+    if (qty <= 0) return { items: state.items.filter(i => i.lineId !== lineId) };
     const safeQty = Math.min(Math.floor(qty), 99);
-    return { items: state.items.map(i => i.menu.id === menuId ? { ...i, qty: safeQty } : i) };
+    return { items: state.items.map(i => i.lineId === lineId ? { ...i, qty: safeQty } : i) };
   }),
 
   clearCart: () => set({ items: [] }),
@@ -72,7 +96,7 @@ export const useKioskStore = create<KioskState>((set, get) => ({
   },
 
   getSubtotal: () => {
-    return get().items.reduce((sum, item) => sum + (item.menu.price * item.qty), 0);
+    return get().items.reduce((sum, item) => sum + (lineUnitPrice(item) * item.qty), 0);
   },
 
   getTax: () => {

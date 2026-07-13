@@ -1,70 +1,95 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { CookingPot, CheckSquare, Square, Check, Info } from "@phosphor-icons/react";
+import { CookingPot, CheckSquare, Square, Check, Info, XCircle, Clock } from "@phosphor-icons/react";
 import { PasscodeDialog } from "@/components/shared/PasscodeDialog";
-import { createClient } from "@/lib/supabase/client";
 import type { Order } from "@/types";
 import { PageHeader } from "@/components/page-header";
 import { BadgeTag } from "@/components/badge-tag";
 import { useToast } from "@/components/ui/use-toast";
+import { LiveIndicator } from "@/components/live-indicator";
+
+const ALERT_MINUTES = 8;
 
 export default function KitchenPage() {
   const [passcode, setPasscode] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [lastSync, setLastSync] = useState<number | null>(null);
   const { toast } = useToast();
 
-  const fetchOrders = async (supabase: any) => {
-    const { data, error } = await supabase
-      .from('orders')
-      .select('*, order_items(*, menus(name, image_url))')
-      .in('status', ['pending', 'preparing'])
-      .order('created_at', { ascending: true });
-      
-    if (error) {
-       console.error(error);
-       setErrorMsg("Gagal mengambil data orders dari database.");
-    } else if (data) {
-       setOrders(data as Order[]);
+  const audioRef = useRef<AudioContext | null>(null);
+  const seenIds = useRef<Set<string>>(new Set());
+  const alertedIds = useRef<Set<string>>(new Set());
+
+  const beep = (freq: number, durationMs: number) => {
+    try {
+      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!audioRef.current) audioRef.current = new Ctx();
+      const ctx = audioRef.current;
+      if (ctx.state === "suspended") ctx.resume();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + durationMs / 1000);
+      osc.start();
+      osc.stop(ctx.currentTime + durationMs / 1000);
+    } catch {
+      /* audio not available */
+    }
+  };
+
+  const fetchOrders = async () => {
+    try {
+      const res = await fetch('/api/orders?status=pending,preparing', { cache: 'no-store' });
+      const { orders: data } = await res.json();
+      if (!res.ok) throw new Error();
+      setLastSync(Date.now());
+
+      // New-order chime + overdue alert
+      const added = data.filter((d: any) => !seenIds.current.has(d.id));
+      if (added.length > 0) beep(880, 180);
+      const now = Date.now();
+      for (const d of data) {
+        const ageMin = (now - new Date(d.created_at).getTime()) / 60000;
+        if (ageMin > ALERT_MINUTES && !alertedIds.current.has(d.id)) {
+          alertedIds.current.add(d.id);
+          beep(440, 450);
+        }
+      }
+      alertedIds.current = new Set(
+        [...alertedIds.current].filter((id) => data.some((d: any) => d.id === id))
+      );
+      seenIds.current = new Set(data.map((d: any) => d.id));
+
+      setOrders(data as Order[]);
+    } catch {
+      setErrorMsg("Gagal mengambil data orders.");
     }
   };
 
   useEffect(() => {
     if (!passcode) return;
+    // Unlock audio on the passcode gesture so alerts can play later.
+    try {
+      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+      audioRef.current = new Ctx();
+      audioRef.current.resume().catch(() => {});
+    } catch {
+      /* ignore */
+    }
 
-    const supabase = createClient();
-    fetchOrders(supabase);
+    fetchOrders();
+    // Offline: no realtime; poll every 2 seconds for near-live updates.
+    const interval = setInterval(fetchOrders, 2000);
 
-    // Dapur harus merender order terbaru walau tidak dipencet.
-    // Supabase Realtime *hanya* menembak event tanpa payload JOIN (relasi order_items dan menus tidak ikut).
-    // Oleh karena itu, trik terbaik agar selalu akurat adalah: Saat ada perubahan di orders atau order_items, 
-    // kita memanggil ulang `fetchOrders()` secara background.
-    const channel = supabase.channel('kitchen_sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, (payload) => {
-         if (payload.eventType === 'INSERT') {
-             new Audio('/notification.mp3').play().catch(() => {});
-         }
-         fetchOrders(supabase);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, () => {
-         fetchOrders(supabase);
-      })
-      .subscribe((status) => {
-        if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-          toast({ title: "Koneksi Terputus", description: "Mencoba menghubungkan ulang ke Dapur...", variant: "destructive" });
-        }
-      });
-
-    // Fallback polling (Setiap 5 detik) untuk jaga-jaga kalau event realtime terlewat
-    const interval = setInterval(() => fetchOrders(supabase), 5000);
-
-    return () => {
-      supabase.removeChannel(channel);
-      clearInterval(interval);
-    };
-  }, [passcode, toast]);
+    return () => clearInterval(interval);
+  }, [passcode]);
 
   const toggleItemCheck = async (itemId: string, currentStatus: boolean, orderId: string) => {
     // Optimistic UI
@@ -85,8 +110,28 @@ export default function KitchenPage() {
       console.error(e); 
       setErrorMsg(e.message || "Gagal update item.");
       setTimeout(() => setErrorMsg(null), 3000);
-      const supabase = createClient();
-      fetchOrders(supabase); // revert on failure
+      fetchOrders(); // revert on failure
+    }
+  };
+
+  const rejectItem = async (itemId: string, current: boolean, orderId: string) => {
+    setOrders(prev => prev.map(o => o.id === orderId ? {
+      ...o,
+      order_items: o.order_items?.map(i => i.id === itemId ? { ...i, is_rejected: !current } : i)
+    } : o));
+
+    try {
+      const res = await fetch('/api/orders/items/reject', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_id: itemId, is_rejected: !current, passcode })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error);
+    } catch (e: any) {
+      setErrorMsg(e.message || "Gagal reject item.");
+      setTimeout(() => setErrorMsg(null), 3000);
+      fetchOrders();
     }
   };
 
@@ -110,8 +155,7 @@ export default function KitchenPage() {
       console.error(e); 
       setErrorMsg(e.message || "Gagal mengubah status.");
       setTimeout(() => setErrorMsg(null), 3000);
-      const supabase = createClient();
-      fetchOrders(supabase); // revert
+      fetchOrders(); // revert
     }
   };
 
@@ -134,16 +178,20 @@ export default function KitchenPage() {
         )}
       </AnimatePresence>
 
+      <div className="fixed top-20 right-6 z-50">
+        <BadgeTag variant="count">{orders.length} Active Orders</BadgeTag>
+      </div>
+
       <div className="flex-1 overflow-x-auto overflow-y-hidden p-6 bg-muted/20 relative">
-        <div className="absolute top-6 right-6 z-10">
-           <BadgeTag variant="count">{orders.length} Active Orders</BadgeTag>
-        </div>
-        
         <div className="flex h-full gap-6 pb-4 mt-8">
+
+        <LiveIndicator lastSync={lastSync} />
           <AnimatePresence mode="popLayout">
             {orders.map(order => {
-              const allChecked = order.order_items?.every(item => item.is_checked);
+              const allChecked = order.order_items?.every(item => item.is_rejected || item.is_checked);
               const isPreparing = order.status === 'preparing';
+              const ageMin = (Date.now() - new Date(order.created_at).getTime()) / 60000;
+              const overdue = ageMin > ALERT_MINUTES;
               
               return (
                 <motion.div
@@ -152,16 +200,21 @@ export default function KitchenPage() {
                   initial={{ opacity: 0, scale: 0.95, y: 20 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.9, filter: "blur(4px)" }}
-                  className={`flex w-80 shrink-0 flex-col overflow-hidden rounded-2xl border transition-all duration-300 shadow-sm ${
-                    isPreparing ? 'border-[#e67e80]/30 bg-[#e67e80]/5' : 'border-border/50 bg-card'
+                  className={`flex w-80 shrink-0 flex-col overflow-hidden rounded-2xl border bg-card ${
+                    isPreparing ? 'border-[#e67e80]/30' : 'border-border'
                   }`}
                 >
-                  <div className={`p-5 border-b ${isPreparing ? 'border-[#e67e80]/20 bg-[#e67e80]/10' : 'border-border/50'}`}>
-                    <div className="flex items-center justify-between">
-                      <span className="text-3xl font-black tracking-tighter text-foreground">
-                        #{order.order_number}
-                      </span>
-                      <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-widest shadow-sm ${
+                  <div className={`flex items-center justify-between border-b border-border/50 p-5 ${isPreparing ? 'bg-[#e67e80]/10' : ''}`}>
+                    <span className="text-3xl font-black tracking-tighter text-foreground">
+                      #{order.order_number}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {overdue && (
+                        <span className="flex items-center gap-1 rounded-full bg-[#e67e80] px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-background">
+                          <Clock weight="bold" className="h-3 w-3" /> {Math.floor(ageMin)}m
+                        </span>
+                      )}
+                      <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase tracking-widest ${
                         isPreparing ? 'bg-[#e67e80] text-background' : 'bg-muted text-muted-foreground'
                       }`}>
                         {order.status}
@@ -170,37 +223,70 @@ export default function KitchenPage() {
                   </div>
 
                   <div className="flex-1 overflow-y-auto p-5">
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       {order.order_items?.map(item => (
-                        <motion.div 
-                          key={item.id} 
-                          layout
-                          onClick={() => isPreparing && toggleItemCheck(item.id, item.is_checked, order.id)}
-                          className={`flex items-center gap-3 rounded-xl border p-3 transition-all ${
-                            !isPreparing ? 'cursor-not-allowed opacity-50 border-border/50 bg-muted/20' :
-                            item.is_checked ? 'cursor-pointer border-[#e67e80]/20 bg-[#e67e80]/10 opacity-70' : 
-                            'cursor-pointer border-border bg-card shadow-sm hover:border-[#e67e80]/40 hover:shadow-md'
+                        <div
+                          key={item.id}
+                          className={`flex w-full items-start gap-3 rounded-xl border p-3 transition-all ${
+                            item.is_rejected
+                              ? 'border-dashed border-[#e67e80] bg-[#e67e80]/5 opacity-70'
+                              : !isPreparing
+                                ? 'border-border/50 bg-muted/20 opacity-60'
+                                : item.is_checked
+                                  ? 'border-[#e67e80]/30 bg-[#e67e80]/10 opacity-70'
+                                  : 'border-border bg-background'
                           }`}
                         >
-                          {item.is_checked ? (
-                            <CheckSquare weight="fill" className="h-6 w-6 shrink-0 text-[#e67e80]" />
-                          ) : (
-                            <Square weight="bold" className={`h-6 w-6 shrink-0 ${isPreparing ? 'text-muted-foreground' : 'text-muted-foreground/30'}`} />
-                          )}
-                          <div className="flex-1 font-semibold text-foreground leading-tight">
-                            <span className="mr-2 font-black text-[#e67e80]">{item.qty}x</span>
-                            {item.menus?.name}
+                          <button
+                            onClick={() => isPreparing && toggleItemCheck(item.id, item.is_checked, order.id)}
+                            disabled={!isPreparing || item.is_rejected}
+                            className="shrink-0 disabled:cursor-not-allowed"
+                          >
+                            {item.is_checked ? (
+                              <CheckSquare weight="fill" className="h-5 w-5 text-[#e67e80]" />
+                            ) : (
+                              <Square weight="bold" className="h-5 w-5 text-muted-foreground/50" />
+                            )}
+                          </button>
+                          <div className="flex-1 font-semibold leading-tight text-foreground">
+                            <span className={`mr-2 font-black text-[#e67e80] ${item.is_rejected ? 'line-through' : ''}`}>
+                              {item.qty}x
+                            </span>
+                            <span className={item.is_rejected ? 'line-through' : ''}>{item.menus?.name}</span>
+                            {item.selected_options && item.selected_options.length > 0 && (
+                              <p className="mt-0.5 text-[11px] font-normal text-muted-foreground">
+                                {item.selected_options.map((o) => o.choice).join(" + ")}
+                              </p>
+                            )}
+                            {item.is_rejected && (
+                              <span className="ml-1 rounded bg-[#e67e80] px-1.5 py-0.5 text-[9px] font-bold uppercase text-background">
+                                Habis
+                              </span>
+                            )}
                           </div>
-                        </motion.div>
+                          {isPreparing && (
+                            <button
+                              onClick={() => rejectItem(item.id, !!item.is_rejected, order.id)}
+                              title={item.is_rejected ? "Batalkan reject" : "Tandai habis"}
+                              className={`shrink-0 rounded-lg border p-2 transition-colors active:scale-95 ${
+                                item.is_rejected
+                                  ? "border-[#e67e80] bg-[#e67e80] text-background hover:bg-[#e67e80]/80"
+                                  : "border-border bg-background text-muted-foreground hover:border-[#e67e80] hover:bg-[#e67e80]/10 hover:text-[#e67e80]"
+                              }`}
+                            >
+                              <XCircle weight="bold" className="h-5 w-5" />
+                            </button>
+                          )}
+                        </div>
                       ))}
                     </div>
                   </div>
 
-                  <div className="border-t border-border/50 p-5 bg-card">
+                  <div className="border-t border-border/50 p-5">
                     {!isPreparing ? (
                       <button
                         onClick={() => updateOrderStatus(order.id, 'preparing')}
-                        className="w-full rounded-xl bg-foreground py-4 min-h-[44px] text-sm font-black tracking-wide text-background shadow-sm transition-transform active:scale-[0.98]"
+                        className="w-full rounded-xl bg-foreground py-4 text-sm font-black tracking-wide text-background transition-transform active:scale-[0.98]"
                       >
                         Start Preparing
                       </button>
@@ -208,7 +294,7 @@ export default function KitchenPage() {
                       <button
                         onClick={() => updateOrderStatus(order.id, 'ready')}
                         disabled={!allChecked}
-                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#e67e80] py-4 min-h-[44px] text-sm font-black tracking-wide text-background shadow-sm transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100"
+                        className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#e67e80] py-4 text-sm font-black tracking-wide text-background transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <Check weight="bold" className="h-5 w-5" />
                         Complete & Send

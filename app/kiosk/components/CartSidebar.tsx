@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ShoppingCart, Minus, Plus, Trash, CheckCircle } from "@phosphor-icons/react";
-import { useKioskStore } from "@/lib/store";
+import { useKioskStore, lineUnitPrice } from "@/lib/store";
 import { submitCheckout } from "../actions";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -37,7 +37,11 @@ export function CartSidebar() {
     setIsSubmitting(true);
     try {
       const payload = {
-        items: items.map(i => ({ menu_id: i.menu.id, qty: i.qty })),
+        items: items.map(i => ({
+          menu_id: i.menu.id,
+          qty: i.qty,
+          options: i.selectedOptions.map(o => ({ group: o.group, choice: o.choice })),
+        })),
         promo_id: isWeekendActive && activePromo ? activePromo.id : null
       };
       const res = await submitCheckout(payload);
@@ -84,9 +88,20 @@ export function CartSidebar() {
             </div>
             <h2 className="text-xl font-bold tracking-tight text-foreground">Your Order</h2>
           </div>
-          <BadgeTag variant="count">
-            {items.reduce((acc, i) => acc + i.qty, 0)}
-          </BadgeTag>
+          <div className="flex items-center gap-2">
+            {items.length > 0 && (
+              <button
+                onClick={clearCart}
+                title="Hapus semua"
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive active:scale-95"
+              >
+                <Trash weight="bold" className="h-5 w-5" />
+              </button>
+            )}
+            <BadgeTag variant="count">
+              {items.reduce((acc, i) => acc + i.qty, 0)}
+            </BadgeTag>
+          </div>
         </div>
 
         {/* Cart Items Area */}
@@ -101,9 +116,11 @@ export function CartSidebar() {
               </motion.div>
             ) : (
               <div className="flex flex-col gap-4">
-                {items.map((item) => (
+                {items.map((item) => {
+                  const unit = lineUnitPrice(item);
+                  return (
                   <motion.div 
-                    key={item.menu.id}
+                    key={item.lineId}
                     layout
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}
@@ -111,23 +128,35 @@ export function CartSidebar() {
                     className="flex flex-col gap-3 rounded-xl border border-border/60 bg-background p-4 shadow-sm"
                   >
                     <div className="flex items-start justify-between">
-                      <h4 className="text-sm font-bold leading-tight text-foreground line-clamp-2 pr-4">{item.menu.name}</h4>
-                      <span className="text-sm font-bold text-foreground shrink-0">{formatIDR(item.menu.price * item.qty)}</span>
+                      <h4 className="text-sm font-bold leading-tight text-foreground line-clamp-2 pr-4">
+                        {item.menu.name}
+                      </h4>
+                      <span className="text-sm font-bold text-foreground shrink-0">{formatIDR(unit * item.qty)}</span>
                     </div>
+                    {item.selectedOptions.length > 0 && (
+                      <div className="flex flex-wrap gap-1 -mt-1">
+                        {item.selectedOptions.map((o) => (
+                          <span key={o.group} className="rounded bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                            {o.choice}{o.price_delta > 0 ? ` +${formatIDR(o.price_delta)}` : ""}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <div className="flex items-center justify-between mt-1">
-                      <span className="text-xs font-medium text-muted-foreground">{formatIDR(item.menu.price)} / ea</span>
+                      <span className="text-xs font-medium text-muted-foreground">{formatIDR(unit)} / ea</span>
                       <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
-                        <button onClick={() => updateQty(item.menu.id, item.qty - 1)} className="flex h-8 w-8 items-center justify-center rounded-md bg-background text-foreground shadow-sm hover:text-primary transition-colors active:scale-95">
+                        <button onClick={() => updateQty(item.lineId, item.qty - 1)} className="flex h-8 w-8 items-center justify-center rounded-md bg-background text-foreground shadow-sm hover:text-primary transition-colors active:scale-95">
                           {item.qty === 1 ? <Trash weight="bold" className="h-4 w-4" /> : <Minus weight="bold" className="h-4 w-4" />}
                         </button>
                         <span className="w-8 text-center text-sm font-bold">{item.qty}</span>
-                        <button onClick={() => updateQty(item.menu.id, item.qty + 1)} className="flex h-8 w-8 items-center justify-center rounded-md bg-background text-foreground shadow-sm hover:text-primary transition-colors active:scale-95">
+                        <button onClick={() => updateQty(item.lineId, item.qty + 1)} className="flex h-8 w-8 items-center justify-center rounded-md bg-background text-foreground shadow-sm hover:text-primary transition-colors active:scale-95">
                           <Plus weight="bold" className="h-4 w-4" />
                         </button>
                       </div>
                     </div>
                   </motion.div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </AnimatePresence>
@@ -180,9 +209,14 @@ export function CartSidebar() {
           
           <ScrollArea className="max-h-[300px] w-full rounded-lg border border-border/50 bg-muted/30 p-4 my-4">
             {items.map((item) => (
-              <div key={item.menu.id} className="flex justify-between py-3 border-b border-border/50 last:border-0 text-sm">
-                <span className="font-medium text-muted-foreground"><strong className="text-foreground mr-2">{item.qty}x</strong>{item.menu.name}</span>
-                <span className="font-bold text-foreground">{formatIDR(item.menu.price * item.qty)}</span>
+              <div key={item.lineId} className="flex justify-between py-3 border-b border-border/50 last:border-0 text-sm">
+                <span className="font-medium text-muted-foreground">
+                  <strong className="text-foreground mr-2">{item.qty}x</strong>{item.menu.name}
+                  {item.selectedOptions.length > 0 && (
+                    <span className="text-xs text-muted-foreground/70"> ({item.selectedOptions.map(o => o.choice).join(", ")})</span>
+                  )}
+                </span>
+                <span className="font-bold text-foreground">{formatIDR(lineUnitPrice(item) * item.qty)}</span>
               </div>
             ))}
           </ScrollArea>

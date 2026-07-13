@@ -1,7 +1,7 @@
 -- Active Persona: [supabase-postgres-best-practices]
 -- Active Skills: PostgreSQL Schema Design, RLS Security, Data Modeling
 
--- 1. Create Enums
+ - 1. Create Enums
 CREATE TYPE user_role AS ENUM ('kitchen', 'cashier', 'admin');
 CREATE TYPE order_status AS ENUM ('pending', 'preparing', 'ready', 'completed');
 
@@ -29,7 +29,7 @@ CREATE TABLE promos (
     valid_days JSONB NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT true
 );
-
+ 
 -- Using a sequence for short, readable order numbers
 CREATE SEQUENCE order_number_seq START 1;
 
@@ -96,3 +96,11 @@ INSERT INTO users (username, role, passcode) VALUES
 ('kitchen_master', 'kitchen', '111111'),
 ('cashier_front', 'cashier', '222222'),
 ('admin_boss', 'admin', '999999');
+
+-- 5. Enable Realtime
+-- Kitchen/Cashier/Admin subscribe to postgres_changes on these tables for live updates.
+-- Without this, only the client-side polling fallback fires.
+ALTER PUBLICATION supabase_realtime ADD TABLE orders;
+ALTER PUBLICATION supabase_realtime ADD TABLE order_items;
+ALTER PUBLICATION supabase_realtime ADD TABLE menus;
+ALTER PUBLICATION supabase_realtime ADD TABLE promos;
