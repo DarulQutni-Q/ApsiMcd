@@ -615,8 +615,10 @@ export function AdminClient() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/40">
-                  {menus.length > 0 ? menus.map((menu) => (
-                    <tr key={menu.id} className="bg-card hover:bg-muted/20 transition-colors">
+                  {menus.length > 0 ? menus.map((menu) => {
+                    const out = stockAlerts.some((a) => !a.resolved && a.menu_id === menu.id);
+                    return (
+                    <tr key={menu.id} className={`bg-card hover:bg-muted/20 transition-colors ${out ? 'opacity-60' : ''}`}>
                       <td className="px-6 py-3">
                         <div className="h-10 w-10 rounded-lg bg-muted/40 overflow-hidden flex items-center justify-center">
                           {menu.image_url
@@ -629,14 +631,17 @@ export function AdminClient() {
                           {menu.option_groups && menu.option_groups.length > 0 && (
                             <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-primary">Pilihan</span>
                           )}
+                          {out && (
+                            <span className="rounded bg-[#e67e80]/15 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-[#e67e80]">Habis</span>
+                          )}
                           {menu.name}
                         </div>
                       </td>
                       <td className="px-6 py-3 text-muted-foreground">{menu.category}</td>
                       <td className="px-6 py-3 font-bold text-primary">{formatIDR(menu.price)}</td>
                       <td className="px-6 py-3 text-center">
-                        <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold ${menu.is_active ? 'bg-[#a7c080]/15 text-[#83a35f]' : 'bg-muted text-muted-foreground'}`}>
-                          {menu.is_active ? 'Ya' : 'Tidak'}
+                        <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold ${out || !menu.is_active ? 'bg-muted text-muted-foreground' : 'bg-[#a7c080]/15 text-[#83a35f]'}`}>
+                          {out || !menu.is_active ? 'Tidak' : 'Ya'}
                         </span>
                       </td>
                       <td className="px-6 py-3">
@@ -650,7 +655,8 @@ export function AdminClient() {
                         </div>
                       </td>
                     </tr>
-                  )) : (
+                    );
+                  }) : (
                     <tr><td colSpan={6} className="px-6 py-8 text-center text-muted-foreground font-medium">Belum ada menu.</td></tr>
                   )}
                 </tbody>
