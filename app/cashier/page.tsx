@@ -64,7 +64,6 @@ export default function CashierPage() {
     const paymentMethod = selectedPayment[orderId] || 'Cash';
     const paidOrder = orders.find(o => o.id === orderId) || null;
     const items = paidOrder?.order_items ?? [];
-    const allRejected = items.length > 0 && items.every(i => i.is_rejected);
 
     // Optimistic UI removal
     setOrders(prev => prev.filter(o => o.id !== orderId));
@@ -85,7 +84,7 @@ export default function CashierPage() {
       if (!res.ok || !data.success) throw new Error(data.error);
       
       new Audio('/notification.mp3').play().catch(() => {});
-      if (paidOrder && !allRejected) {
+      if (paidOrder) {
         setPaidReceipt({ order: { ...paidOrder, payment_method: paymentMethod }, method: paymentMethod });
       }
     } catch (e: any) {
@@ -187,26 +186,23 @@ export default function CashierPage() {
                         </div>
 
                        <div className="space-y-3">
-                         {order.order_items?.map(item => (
-                           <div
-                             key={item.id}
-                             className={`flex items-start justify-between gap-3 ${item.is_rejected ? 'text-muted-foreground/60 line-through' : 'text-foreground'}`}
-                           >
-                             <div className="flex items-center gap-3">
-                               <span className={`font-black ${item.is_rejected ? 'text-muted-foreground/60' : 'text-[#7fbbb3]'}`}>{item.qty}x</span>
-                               <span className="font-medium text-muted-foreground">
-                                 {item.menus?.name}
-                                 {item.selected_options && item.selected_options.length > 0 && (
-                                   <span className="ml-1 text-[11px] text-muted-foreground/70">({item.selected_options.map(o => o.choice).join(", ")})</span>
-                                 )}
-                               </span>
-                               {item.is_rejected && (
-                                 <span className="rounded-full bg-[#e67e80]/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#e67e80] no-underline">Habis</span>
-                               )}
-                             </div>
-                             <span className="font-semibold">{formatIDR(item.subtotal_price)}</span>
-                           </div>
-                         ))}
+                          {order.order_items?.map(item => (
+                            <div
+                              key={item.id}
+                              className="flex items-start justify-between gap-3 text-foreground"
+                            >
+                              <div className="flex items-center gap-3">
+                                <span className="font-black text-[#7fbbb3]">{item.qty}x</span>
+                                <span className="font-medium text-muted-foreground">
+                                  {item.menus?.name}
+                                  {item.selected_options && item.selected_options.length > 0 && (
+                                    <span className="ml-1 text-[11px] text-muted-foreground/70">({item.selected_options.map(o => o.choice).join(", ")})</span>
+                                  )}
+                                </span>
+                              </div>
+                              <span className="font-semibold">{formatIDR(item.subtotal_price)}</span>
+                            </div>
+                          ))}
                        </div>
                      </div>
 

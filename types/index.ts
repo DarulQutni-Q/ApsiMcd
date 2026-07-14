@@ -50,9 +50,17 @@ export interface OrderItem {
   qty: number;
   subtotal_price: number;
   is_checked: boolean; // For Kitchen interactive checklist
-  is_rejected?: boolean; // marked "habis" by kitchen
   selected_options?: SelectedOption[]; // chosen modifiers (meat/size/flavor)
   menus?: Menu; // Relational JOIN mapping
+}
+
+/** Out-of-stock warning raised by the kitchen and shown to the admin. */
+export interface StockAlert {
+  id: string;
+  menu_id: string;
+  menu_name: string;
+  created_at: string;
+  resolved: boolean;
 }
 
 export interface Order {

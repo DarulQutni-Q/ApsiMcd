@@ -18,7 +18,7 @@ export function Receipt({
   paymentMethod?: string;
 }) {
   const method = paymentMethod || order.payment_method || "Cash";
-  const items = (order.order_items || []).filter((i) => !i.is_rejected);
+  const items = order.order_items || [];
   const created = new Date(order.created_at);
   const dateStr = created.toLocaleDateString("id-ID", {
     day: "2-digit",

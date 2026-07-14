@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ShoppingCart } from "@phosphor-icons/react/dist/ssr";
 import { CartSidebar } from "./components/CartSidebar";
 import { useKioskStore } from "@/lib/store";
-import type { Menu, Promo, SelectedOption } from "@/types";
+import type { Menu, Promo, SelectedOption, StockAlert } from "@/types";
 import { useIdleTimer } from "@/hooks/use-idle-timer";
 import Image from "next/image";
 import { Logo } from "@/components/logo";
@@ -25,6 +25,7 @@ export default function KioskPage() {
   const [menus, setMenus] = useState<(Menu & { isNew?: boolean, isPopular?: boolean })[]>([]);
   const [loading, setLoading] = useState(true);
   const [optionMenu, setOptionMenu] = useState<Menu | null>(null);
+  const [outOfStockIds, setOutOfStockIds] = useState<string[]>([]);
   
   const { isWeekendActive, activePromo, checkWeekendPromo, items, clearCart, selectedMenuId, setSelectedMenuId, addItem } = useKioskStore();
   const { showWarning, dismiss } = useIdleTimer(60000, 10000); 
@@ -55,6 +56,23 @@ export default function KioskPage() {
     loadData();
   }, [checkWeekendPromo]);
 
+  // Poll out-of-stock alerts so the kitchen's "habis" warnings disable items live.
+  useEffect(() => {
+    const loadStock = async () => {
+      try {
+        const res = await fetch('/api/stock-alerts', { cache: 'no-store' });
+        const { alerts } = await res.json();
+        const active = ((alerts as StockAlert[]) || []).filter((a) => !a.resolved).map((a) => a.menu_id);
+        setOutOfStockIds(active);
+      } catch {
+        /* ignore */
+      }
+    };
+    loadStock();
+    const t = setInterval(loadStock, 5000);
+    return () => clearInterval(t);
+  }, []);
+
   // Set default selected item once menus load
   useEffect(() => {
      if (menus.length > 0 && !selectedMenuId) {
@@ -71,10 +89,27 @@ export default function KioskPage() {
 
   const orderMenu = (menu: Menu | undefined) => {
     if (!menu) return;
+    if (outOfStockIds.includes(menu.id)) return;
     if (menu.option_groups && menu.option_groups.length > 0) {
       setOptionMenu(menu);
     } else {
       addItem(menu);
+    }
+  };
+
+  // Prev/Next navigation that skips out-of-stock items.
+  const stepMenu = (dir: 1 | -1) => {
+    const n = menus.length;
+    if (n === 0) return;
+    if (menus.every((m) => outOfStockIds.includes(m.id))) return;
+    let i = menus.findIndex((m) => m.id === selectedMenuId);
+    if (i === -1) i = 0;
+    for (let k = 0; k < n; k++) {
+      i = (i + dir + n) % n;
+      if (!outOfStockIds.includes(menus[i].id)) {
+        setSelectedMenuId(menus[i].id);
+        return;
+      }
     }
   };
 
@@ -187,55 +222,48 @@ export default function KioskPage() {
 
                     {/* Floating CTA */}
                     <AnimatePresence mode="wait">
-                      <motion.div
-                         key={`price-${selectedMenu?.id}`}
-                         initial={{ opacity: 0, y: 20 }}
-                         animate={{ opacity: 1, y: 0 }}
-                         exit={{ opacity: 0, y: 10, transition: { duration: 0.1 } }}
-                         className="absolute -bottom-6 left-1/2 -translate-x-1/2 z-30"
-                      >
-                         <button 
-                           onClick={() => orderMenu(selectedMenu)}
-                           className="flex h-14 items-center rounded-full bg-primary pl-6 pr-8 text-primary-foreground font-bold shadow-xl transition-transform hover:scale-105 active:scale-95"
-                         >
-                           <span className="mr-4 border-r border-primary-foreground/30 pr-4">
-                              {formatIDR(selectedMenu?.price || 0)}
-                           </span>
-                           ORDER NOW
-                         </button>
-                      </motion.div>
+                         <motion.div
+                          key={`price-${selectedMenu?.id}`}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 10, transition: { duration: 0.1 } }}
+                          className="absolute -bottom-6 left-1/2 -translate-x-1/2 z-30"
+                       >
+                          <button
+                            onClick={() => orderMenu(selectedMenu)}
+                            disabled={!!selectedMenu && outOfStockIds.includes(selectedMenu.id)}
+                            className="flex h-14 items-center rounded-full bg-primary pl-6 pr-8 text-primary-foreground font-bold shadow-xl transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            <span className="mr-4 border-r border-primary-foreground/30 pr-4">
+                               {formatIDR(selectedMenu?.price || 0)}
+                            </span>
+                            {!!selectedMenu && outOfStockIds.includes(selectedMenu.id) ? "Habis" : "ORDER NOW"}
+                          </button>
+                       </motion.div>
                     </AnimatePresence>
                  </div>
                  
                  {/* Bottom Pagination / Decor */}
                   <div className="absolute bottom-8 left-12 flex items-center gap-6 text-xs font-bold text-muted-foreground uppercase tracking-widest">
-                     <button
-                       type="button"
-                       onClick={() => {
-                         const i = menus.findIndex(m => m.id === selectedMenuId);
-                         const prev = menus[(i - 1 + menus.length) % menus.length];
-                         if (prev) setSelectedMenuId(prev.id);
-                       }}
-                       className="opacity-50 hover:opacity-100 transition-opacity"
-                     >
-                       &lt; Prev
-                     </button>
+                      <button
+                        type="button"
+                        onClick={() => stepMenu(-1)}
+                        className="opacity-50 hover:opacity-100 transition-opacity"
+                      >
+                        &lt; Prev
+                      </button>
                      <span className="text-foreground tabular-nums">
                        {String(menus.findIndex(m => m.id === selectedMenuId) + 1).padStart(2, '0')}
                      </span>
                      <div className="w-16 h-px bg-border"></div>
                      <span className="tabular-nums">{String(menus.length).padStart(2, '0')}</span>
-                     <button
-                       type="button"
-                       onClick={() => {
-                         const i = menus.findIndex(m => m.id === selectedMenuId);
-                         const next = menus[(i + 1) % menus.length];
-                         if (next) setSelectedMenuId(next.id);
-                       }}
-                       className="opacity-50 hover:opacity-100 transition-opacity"
-                     >
-                       Next &gt;
-                     </button>
+                      <button
+                        type="button"
+                        onClick={() => stepMenu(1)}
+                        className="opacity-50 hover:opacity-100 transition-opacity"
+                      >
+                        Next &gt;
+                      </button>
                   </div>
               </div>
 
@@ -246,54 +274,64 @@ export default function KioskPage() {
                  <div className="absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-background to-transparent z-40 pointer-events-none" />
                  
                   <div className="flex-1 overflow-y-auto px-4 py-8 space-y-4 no-scrollbar scroll-smooth">
-                     {displayedMenus.map((menu) => {
-                        const isActive = selectedMenuId === menu.id;
-                        
-                        return (
-                           <motion.div 
-                             key={menu.id}
-                             role="button"
-                             tabIndex={0}
-                             aria-pressed={isActive}
-                             aria-label={menu.name}
-                             onClick={() => setSelectedMenuId(menu.id)}
-                             onKeyDown={(e) => {
-                               if (e.key === 'Enter' || e.key === ' ') {
-                                 e.preventDefault();
-                                 setSelectedMenuId(menu.id);
-                               }
-                             }}
-                             className={`relative flex items-center p-3 rounded-full cursor-pointer transition-all duration-300 ${
-                              isActive 
-                                ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-105' 
-                                : 'bg-card text-foreground shadow-sm hover:shadow-md border border-white'
-                            }`}
-                          >
-                             <div className="h-16 w-16 shrink-0 rounded-full bg-background overflow-hidden shadow-inner relative flex items-center justify-center">
-                                {menu.image_url ? (
-                                  <Image src={menu.image_url} alt={menu.name} fill className="object-cover" />
-                                ) : (
-                                  <span className="text-xl opacity-50 grayscale">🍔</span>
-                                )}
-                             </div>
-                              <div className="ml-4 pr-4 flex-1 min-w-0">
-                                 <div className="flex items-center gap-2">
-                                   {menu.option_groups && menu.option_groups.length > 0 && (
-                                     <span className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-primary">
-                                       Pilihan
-                                     </span>
-                                   )}
-                                   <h3 className={`text-sm font-bold leading-tight truncate uppercase tracking-wide ${isActive ? 'text-primary-foreground' : 'text-foreground'}`}>
-                                     {menu.name}
-                                   </h3>
-                                 </div>
-                                <p className={`text-[10px] mt-1 font-medium ${isActive ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
-                                  {formatIDR(menu.price)}
-                                </p>
-                             </div>
-                          </motion.div>
-                        );
-                     })}
+                      {displayedMenus.map((menu) => {
+                         const isActive = selectedMenuId === menu.id;
+                         const out = outOfStockIds.includes(menu.id);
+
+                         return (
+                            <motion.div
+                              key={menu.id}
+                              role="button"
+                              tabIndex={out ? -1 : 0}
+                              aria-pressed={isActive}
+                              aria-label={menu.name}
+                              aria-disabled={out}
+                              onClick={() => !out && setSelectedMenuId(menu.id)}
+                              onKeyDown={(e) => {
+                                if (out) return;
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  setSelectedMenuId(menu.id);
+                                }
+                              }}
+                              className={`relative flex items-center p-3 rounded-full transition-all duration-300 ${
+                                out
+                                  ? 'cursor-not-allowed opacity-60 bg-card text-foreground border border-white'
+                                  : `cursor-pointer ${isActive
+                                      ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-105'
+                                      : 'bg-card text-foreground shadow-sm hover:shadow-md border border-white'}`
+                              }`}
+                            >
+                              <div className="h-16 w-16 shrink-0 rounded-full bg-background overflow-hidden shadow-inner relative flex items-center justify-center">
+                                 {menu.image_url ? (
+                                   <Image src={menu.image_url} alt={menu.name} fill className="object-cover" />
+                                 ) : (
+                                   <span className="text-xl opacity-50 grayscale">🍔</span>
+                                 )}
+                              </div>
+                               <div className="ml-4 pr-4 flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    {menu.option_groups && menu.option_groups.length > 0 && (
+                                      <span className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-primary">
+                                        Pilihan
+                                      </span>
+                                    )}
+                                    {out && (
+                                      <span className="shrink-0 rounded bg-[#e67e80]/15 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-[#e67e80]">
+                                        Habis
+                                      </span>
+                                    )}
+                                    <h3 className={`text-sm font-bold leading-tight truncate uppercase tracking-wide ${isActive ? 'text-primary-foreground' : 'text-foreground'}`}>
+                                      {menu.name}
+                                    </h3>
+                                  </div>
+                                 <p className={`text-[10px] mt-1 font-medium ${isActive ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                                   {formatIDR(menu.price)}
+                                 </p>
+                              </div>
+                           </motion.div>
+                         );
+                      })}
                   </div>
               </div>
            </div>

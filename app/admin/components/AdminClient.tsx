@@ -2,11 +2,11 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import dynamic from "next/dynamic";
-import { DownloadSimple, TrendUp, Coin, CheckCircle, Package, Receipt as ReceiptIcon, ForkKnife, PencilSimple, Trash, Plus, X, Printer, PencilLine } from "@phosphor-icons/react/dist/ssr";
+import { DownloadSimple, TrendUp, Coin, CheckCircle, Package, Receipt as ReceiptIcon, ForkKnife, PencilSimple, Trash, Plus, X, Printer, PencilLine, Warning } from "@phosphor-icons/react/dist/ssr";
 import { PasscodeDialog } from "@/components/shared/PasscodeDialog";
-import type { Menu, MenuOption, MenuOptionGroup } from "@/types";
+import type { Menu, MenuOption, MenuOptionGroup, StockAlert } from "@/types";
 import { format, parseISO, startOfDay, endOfDay } from "date-fns";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
 import { LiveIndicator } from "@/components/live-indicator";
@@ -32,6 +32,7 @@ export function AdminClient() {
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
   const [summary, setSummary] = useState({ totalRevenue: 0, totalOrders: 0, itemsSold: 0 });
   const [menus, setMenus] = useState<Menu[]>([]);
+  const [stockAlerts, setStockAlerts] = useState<StockAlert[]>([]);
   const [editingMenu, setEditingMenu] = useState<Menu | null>(null);
   const [showMenuForm, setShowMenuForm] = useState(false);
   const [showMenuManager, setShowMenuManager] = useState(false);
@@ -130,7 +131,31 @@ export function AdminClient() {
     setRecentOrders(sorted);
     setProductData(sortedProducts);
     setSummary({ totalRevenue: totalRev, totalOrders: totalAll, itemsSold: totalItems });
+
+    // Out-of-stock warnings raised by the kitchen.
+    try {
+      const saRes = await fetch('/api/stock-alerts', { cache: 'no-store' });
+      const { alerts } = await saRes.json();
+      if (saRes.ok && alerts) setStockAlerts(alerts.filter((a: StockAlert) => !a.resolved));
+    } catch {
+      /* ignore */
+    }
+
     setLastSync(Date.now());
+  };
+
+  const resolveStockAlert = async (id: string) => {
+    try {
+      const res = await fetch(`/api/stock-alerts/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passcode }),
+      });
+      if (res.ok) setStockAlerts((prev) => prev.filter((a) => a.id !== id));
+      else alert('Gagal menghapus peringatan.');
+    } catch {
+      alert('Gagal menghapus peringatan.');
+    }
   };
 
   const saveMenu = async (form: Omit<Menu, 'id'> & { id?: string }) => {
@@ -282,6 +307,42 @@ export function AdminClient() {
       </div>
 
       <LiveIndicator lastSync={lastSync} />
+
+      <AnimatePresence>
+        {stockAlerts.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="mx-auto mt-4 w-full max-w-7xl"
+          >
+            <div className="flex flex-col gap-2 rounded-xl border border-[#e67e80]/40 bg-[#e67e80]/10 p-4">
+              <div className="flex items-center gap-2 text-[#e67e80]">
+                <Warning weight="bold" className="h-5 w-5" />
+                <span className="text-sm font-black uppercase tracking-wide">
+                  Peringatan Stok Habis ({stockAlerts.length})
+                </span>
+              </div>
+              {stockAlerts.map((a) => (
+                <div key={a.id} className="flex items-center justify-between gap-3 rounded-lg bg-background/60 px-3 py-2">
+                  <span className="text-sm font-semibold text-foreground">
+                    {a.menu_name}
+                    <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+                      {new Date(a.created_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} WIB
+                    </span>
+                  </span>
+                  <button
+                    onClick={() => resolveStockAlert(a.id)}
+                    className="shrink-0 rounded-full border border-[#a7c080]/40 bg-[#a7c080]/15 px-3 py-1 text-xs font-bold text-[#83a35f] transition-colors hover:bg-[#a7c080] hover:text-white"
+                  >
+                    Tandai Tersedia
+                  </button>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="mx-auto w-full max-w-7xl flex-1 p-6 md:p-8 z-10 bg-background/50">
         

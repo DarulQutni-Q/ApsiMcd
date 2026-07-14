@@ -2,13 +2,22 @@
 
 import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { CookingPot, CheckSquare, Square, Check, Info, XCircle, Clock } from "@phosphor-icons/react";
+import { CookingPot, CheckSquare, Square, Check, Info, Clock, Warning, Plus } from "@phosphor-icons/react";
 import { PasscodeDialog } from "@/components/shared/PasscodeDialog";
-import type { Order } from "@/types";
+import type { Menu, Order, StockAlert } from "@/types";
 import { PageHeader } from "@/components/page-header";
 import { BadgeTag } from "@/components/badge-tag";
 import { useToast } from "@/components/ui/use-toast";
 import { LiveIndicator } from "@/components/live-indicator";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
 
 const ALERT_MINUTES = 8;
 
@@ -18,6 +27,12 @@ export default function KitchenPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<number | null>(null);
   const { toast } = useToast();
+
+  // Out-of-stock warning dialog state
+  const [stockOpen, setStockOpen] = useState(false);
+  const [menuList, setMenuList] = useState<Menu[]>([]);
+  const [selectedStock, setSelectedStock] = useState<string[]>([]);
+  const [outOfStock, setOutOfStock] = useState<string[]>([]);
 
   const audioRef = useRef<AudioContext | null>(null);
   const seenIds = useRef<Set<string>>(new Set());
@@ -73,6 +88,17 @@ export default function KitchenPage() {
     }
   };
 
+  const loadOutOfStock = async () => {
+    try {
+      const res = await fetch('/api/stock-alerts', { cache: 'no-store' });
+      const { alerts } = await res.json();
+      const active = (alerts as StockAlert[]).filter((a) => !a.resolved).map((a) => a.menu_id);
+      setOutOfStock(active);
+    } catch {
+      /* ignore */
+    }
+  };
+
   useEffect(() => {
     if (!passcode) return;
     // Unlock audio on the passcode gesture so alerts can play later.
@@ -85,6 +111,7 @@ export default function KitchenPage() {
     }
 
     fetchOrders();
+    loadOutOfStock();
     // Offline: no realtime; poll every 2 seconds for near-live updates.
     const interval = setInterval(fetchOrders, 2000);
 
@@ -107,31 +134,10 @@ export default function KitchenPage() {
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error);
     } catch (e: any) {
-      console.error(e); 
+      console.error(e);
       setErrorMsg(e.message || "Gagal update item.");
       setTimeout(() => setErrorMsg(null), 3000);
       fetchOrders(); // revert on failure
-    }
-  };
-
-  const rejectItem = async (itemId: string, current: boolean, orderId: string) => {
-    setOrders(prev => prev.map(o => o.id === orderId ? {
-      ...o,
-      order_items: o.order_items?.map(i => i.id === itemId ? { ...i, is_rejected: !current } : i)
-    } : o));
-
-    try {
-      const res = await fetch('/api/orders/items/reject', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item_id: itemId, is_rejected: !current, passcode })
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error);
-    } catch (e: any) {
-      setErrorMsg(e.message || "Gagal reject item.");
-      setTimeout(() => setErrorMsg(null), 3000);
-      fetchOrders();
     }
   };
 
@@ -152,11 +158,51 @@ export default function KitchenPage() {
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error);
     } catch (e: any) {
-      console.error(e); 
+      console.error(e);
       setErrorMsg(e.message || "Gagal mengubah status.");
       setTimeout(() => setErrorMsg(null), 3000);
       fetchOrders(); // revert
     }
+  };
+
+  const openStockDialog = async () => {
+    setSelectedStock([]);
+    try {
+      const res = await fetch('/api/menus', { cache: 'no-store' });
+      const { menus } = await res.json();
+      setMenuList(menus || []);
+    } catch {
+      setMenuList([]);
+    }
+    setStockOpen(true);
+  };
+
+  const toggleStockSelection = (id: string) => {
+    setSelectedStock(prev =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const submitStockAlerts = async () => {
+    if (selectedStock.length === 0) return;
+    let ok = true;
+    for (const menuId of selectedStock) {
+      const res = await fetch('/api/stock-alerts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ menu_id: menuId, passcode }),
+      });
+      if (!res.ok) ok = false;
+    }
+    if (ok) {
+      toast({ title: "Peringatan dikirim", description: "Admin telah mendapat kabar stok habis." });
+      await loadOutOfStock();
+    } else {
+      setErrorMsg("Gagal mengirim sebagian peringatan.");
+      setTimeout(() => setErrorMsg(null), 3000);
+    }
+    setStockOpen(false);
+    setSelectedStock([]);
   };
 
   if (!passcode) {
@@ -169,7 +215,7 @@ export default function KitchenPage() {
 
       <AnimatePresence>
         {errorMsg && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}
             className="absolute left-1/2 top-20 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl bg-destructive px-6 py-3 text-sm font-bold text-destructive-foreground shadow-lg"
           >
@@ -178,21 +224,27 @@ export default function KitchenPage() {
         )}
       </AnimatePresence>
 
-      <div className="fixed top-20 right-6 z-50">
+      <div className="fixed top-20 right-6 z-50 flex items-center gap-3">
+        <button
+          onClick={openStockDialog}
+          className="flex items-center gap-2 rounded-full border border-[#e67e80]/30 bg-[#e67e80]/10 px-4 py-2 text-xs font-bold text-[#e67e80] transition-colors hover:bg-[#e67e80]/20"
+        >
+          <Warning weight="bold" className="h-4 w-4" /> Laporkan Stok Habis
+        </button>
         <BadgeTag variant="count">{orders.length} Active Orders</BadgeTag>
       </div>
 
       <div className="flex-1 overflow-x-auto overflow-y-hidden p-6 bg-muted/20 relative">
         <div className="flex h-full gap-6 pb-4 mt-8">
 
-        <LiveIndicator lastSync={lastSync} />
+          <LiveIndicator lastSync={lastSync} />
           <AnimatePresence mode="popLayout">
             {orders.map(order => {
-              const allChecked = order.order_items?.every(item => item.is_rejected || item.is_checked);
+              const allChecked = order.order_items?.every(item => item.is_checked);
               const isPreparing = order.status === 'preparing';
               const ageMin = (Date.now() - new Date(order.created_at).getTime()) / 60000;
               const overdue = ageMin > ALERT_MINUTES;
-              
+
               return (
                 <motion.div
                   key={order.id}
@@ -228,18 +280,16 @@ export default function KitchenPage() {
                         <div
                           key={item.id}
                           className={`flex w-full items-start gap-3 rounded-xl border p-3 transition-all ${
-                            item.is_rejected
-                              ? 'border-dashed border-[#e67e80] bg-[#e67e80]/5 opacity-70'
-                              : !isPreparing
-                                ? 'border-border/50 bg-muted/20 opacity-60'
-                                : item.is_checked
-                                  ? 'border-[#e67e80]/30 bg-[#e67e80]/10 opacity-70'
-                                  : 'border-border bg-background'
+                            !isPreparing
+                              ? 'border-border/50 bg-muted/20 opacity-60'
+                              : item.is_checked
+                                ? 'border-[#e67e80]/30 bg-[#e67e80]/10 opacity-70'
+                                : 'border-border bg-background'
                           }`}
                         >
                           <button
                             onClick={() => isPreparing && toggleItemCheck(item.id, item.is_checked, order.id)}
-                            disabled={!isPreparing || item.is_rejected}
+                            disabled={!isPreparing}
                             className="shrink-0 disabled:cursor-not-allowed"
                           >
                             {item.is_checked ? (
@@ -249,34 +299,16 @@ export default function KitchenPage() {
                             )}
                           </button>
                           <div className="flex-1 font-semibold leading-tight text-foreground">
-                            <span className={`mr-2 font-black text-[#e67e80] ${item.is_rejected ? 'line-through' : ''}`}>
+                            <span className="mr-2 font-black text-[#e67e80]">
                               {item.qty}x
                             </span>
-                            <span className={item.is_rejected ? 'line-through' : ''}>{item.menus?.name}</span>
+                            <span>{item.menus?.name}</span>
                             {item.selected_options && item.selected_options.length > 0 && (
                               <p className="mt-0.5 text-[11px] font-normal text-muted-foreground">
                                 {item.selected_options.map((o) => o.choice).join(" + ")}
                               </p>
                             )}
-                            {item.is_rejected && (
-                              <span className="ml-1 rounded bg-[#e67e80] px-1.5 py-0.5 text-[9px] font-bold uppercase text-background">
-                                Habis
-                              </span>
-                            )}
                           </div>
-                          {isPreparing && (
-                            <button
-                              onClick={() => rejectItem(item.id, !!item.is_rejected, order.id)}
-                              title={item.is_rejected ? "Batalkan reject" : "Tandai habis"}
-                              className={`shrink-0 rounded-lg border p-2 transition-colors active:scale-95 ${
-                                item.is_rejected
-                                  ? "border-[#e67e80] bg-[#e67e80] text-background hover:bg-[#e67e80]/80"
-                                  : "border-border bg-background text-muted-foreground hover:border-[#e67e80] hover:bg-[#e67e80]/10 hover:text-[#e67e80]"
-                              }`}
-                            >
-                              <XCircle weight="bold" className="h-5 w-5" />
-                            </button>
-                          )}
                         </div>
                       ))}
                     </div>
@@ -315,6 +347,68 @@ export default function KitchenPage() {
           )}
         </div>
       </div>
+
+      <Dialog open={stockOpen} onOpenChange={setStockOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Laporkan Stok Habis</DialogTitle>
+            <DialogDescription>
+              Pilih menu yang sedang tidak tersedia. Peringatan akan dikirim ke Admin.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-80 overflow-y-auto space-y-2">
+            {menuList.map((menu) => {
+              const checked = selectedStock.includes(menu.id);
+              const alreadyOut = outOfStock.includes(menu.id);
+              return (
+                <button
+                  key={menu.id}
+                  onClick={() => toggleStockSelection(menu.id)}
+                  className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors ${
+                    checked ? "border-[#e67e80] bg-[#e67e80]/10" : "border-border bg-background hover:bg-muted"
+                  }`}
+                >
+                  <span className="text-sm font-semibold text-foreground">
+                    {menu.name}
+                    {alreadyOut && (
+                      <span className="ml-2 rounded-full bg-[#e67e80]/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#e67e80]">
+                        Sudah dilaporkan
+                      </span>
+                    )}
+                  </span>
+                  <span
+                    className={`flex h-5 w-5 items-center justify-center rounded-md border ${
+                      checked ? "border-[#e67e80] bg-[#e67e80] text-background" : "border-border text-transparent"
+                    }`}
+                  >
+                    <Check weight="bold" className="h-3.5 w-3.5" />
+                  </span>
+                </button>
+              );
+            })}
+            {menuList.length === 0 && (
+              <p className="text-center text-sm text-muted-foreground">Memuat menu...</p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <DialogClose asChild>
+              <button className="h-11 rounded-full border border-border px-5 text-sm font-bold text-foreground">
+                Batal
+              </button>
+            </DialogClose>
+            <button
+              onClick={submitStockAlerts}
+              disabled={selectedStock.length === 0}
+              className="flex h-11 items-center justify-center gap-2 rounded-full bg-[#e67e80] px-6 text-sm font-bold text-background transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Plus weight="bold" className="h-4 w-4" />
+              Kirim Peringatan
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -11863,8 +11863,7 @@
       "menu_id": "da6c11f2-adcc-4be3-a34e-83bc41b46ff5",
       "qty": 3,
       "subtotal_price": 105000,
-      "is_checked": false,
-      "is_rejected": true
+      "is_checked": false
     },
     {
       "id": "647cc16d-fe20-4a0e-990b-f10bb33b04d8",
@@ -11896,8 +11895,7 @@
       "menu_id": "1334c77d-93e2-4516-9501-7cc7393d612c",
       "qty": 1,
       "subtotal_price": 15000,
-      "is_checked": false,
-      "is_rejected": true
+      "is_checked": false
     },
     {
       "id": "474fbf81-7ef5-4fb1-8f60-3b8eacd6f513",
@@ -11921,8 +11919,7 @@
       "menu_id": "d2c63a6d-393f-4311-bf6e-c45ad2dec194",
       "qty": 1,
       "subtotal_price": 25000,
-      "is_checked": false,
-      "is_rejected": true
+      "is_checked": false
     },
     {
       "id": "4b2d44b7-4923-491b-871b-375622014754",
@@ -12062,8 +12059,7 @@
           "price_delta": 5000
         }
       ],
-      "is_checked": false,
-      "is_rejected": true
+      "is_checked": false
     },
     {
       "id": "00db6a42-5a96-45ed-a7a3-05bd76f8d8e0",
@@ -12072,8 +12068,7 @@
       "qty": 2,
       "subtotal_price": 30000,
       "selected_options": [],
-      "is_checked": false,
-      "is_rejected": true
+      "is_checked": false
     },
     {
       "id": "283b482e-b5f5-49e9-b6ac-458f4fbd9961",
@@ -12126,8 +12121,7 @@
       "qty": 1,
       "subtotal_price": 15000,
       "selected_options": [],
-      "is_checked": false,
-      "is_rejected": true
+      "is_checked": false
     },
     {
       "id": "46a4ee2d-0e6c-4e2f-8de0-b1a7d99c5eed",
@@ -12147,8 +12141,7 @@
           "price_delta": 5000
         }
       ],
-      "is_checked": false,
-      "is_rejected": true
+      "is_checked": false
     },
     {
       "id": "ea5cfd05-2ac1-4887-98c3-f72ccacae909",
@@ -12163,8 +12156,16 @@
           "price_delta": 5000
         }
       ],
-      "is_checked": false,
-      "is_rejected": true
+      "is_checked": false
+    }
+  ],
+  "stock_alerts": [
+    {
+      "id": "381bb5eb-a6be-4505-8129-375e59fa6461",
+      "menu_id": "497c8aeb-836e-4039-92c8-05becfccb398",
+      "menu_name": "Dar",
+      "created_at": "2026-07-14T18:17:22.123Z",
+      "resolved": false
     }
   ],
   "order_number_seq": 546

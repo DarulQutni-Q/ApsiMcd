@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { Menu, Order, OrderItem, Promo, UserRole, OrderStatus, SelectedOption } from "@/types";
+import type { Menu, Order, OrderItem, Promo, UserRole, OrderStatus, SelectedOption, StockAlert } from "@/types";
 
 // Offline JSON-backed store. Replaces Supabase for local/presentation use.
 // All reads/writes go through this module. Single-process dev server only.
@@ -21,6 +21,7 @@ interface DB {
   promos: Promo[];
   orders: Order[];
   order_items: OrderItem[];
+  stock_alerts: StockAlert[];
   order_number_seq: number;
 }
 
@@ -136,7 +137,7 @@ export function getOrders(statuses?: OrderStatus[]): Order[] {
 export function areAllItemsChecked(orderId: string): boolean {
   const db = load();
   const items = db.order_items.filter((i) => i.order_id === orderId);
-  return items.length > 0 && items.every((i) => i.is_rejected || i.is_checked);
+  return items.length > 0 && items.every((i) => i.is_checked);
 }
 
 /**
@@ -248,26 +249,55 @@ export async function updateOrderItemChecked(itemId: string, isChecked: boolean)
   });
 }
 
-/** Kitchen marks an item as unavailable ("habis") so the cashier can adjust. */
-export async function setOrderItemRejected(itemId: string, rejected: boolean): Promise<boolean> {
+/** Kitchen reports a menu item as out of stock ("habis"). Idempotent per menu. */
+export async function createStockAlert(
+  menuId: string,
+  passcode: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!verifyPasscode("kitchen", passcode)) {
+    return { success: false, error: "Invalid passcode for kitchen role" };
+  }
   return withWrite((db) => {
-    const item = db.order_items.find((i) => i.id === itemId);
-    if (!item) return false;
-    item.is_rejected = rejected;
+    const menu = db.menus.find((m) => m.id === menuId);
+    if (!menu) return { success: false, error: "Menu not found" };
+    const exists = db.stock_alerts.some((a) => a.menu_id === menuId && !a.resolved);
+    if (exists) return { success: true };
+    db.stock_alerts.push({
+      id: randomUUID(),
+      menu_id: menu.id,
+      menu_name: menu.name,
+      created_at: new Date().toISOString(),
+      resolved: false,
+    });
+    return { success: true };
+  });
+}
 
-    // Recompute the parent order's totals so the cashier charges (and the
-    // receipt shows) only the non-rejected items.
-    const order = db.orders.find((o) => o.id === item.order_id);
-    if (order) {
-      const subtotal = db.order_items
-        .filter((i) => i.order_id === order.id && !i.is_rejected)
-        .reduce((sum, i) => sum + i.subtotal_price, 0);
-      const tax_amount = subtotal * 0.1;
-      order.subtotal = subtotal;
-      order.tax_amount = tax_amount;
-      order.total_price = Math.max(0, subtotal + tax_amount - (order.discount_amount || 0));
-    }
-    return true;
+/** All stock alerts (resolved + unresolved); callers filter as needed. */
+export function getStockAlerts(): StockAlert[] {
+  return load().stock_alerts;
+}
+
+/** Menu IDs currently reported out of stock (unresolved alerts). */
+export function getOutOfStockMenuIds(): string[] {
+  return load()
+    .stock_alerts.filter((a) => !a.resolved)
+    .map((a) => a.menu_id);
+}
+
+/** Admin clears an out-of-stock warning (item is available again). */
+export async function resolveStockAlert(
+  id: string,
+  passcode: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!verifyPasscode("admin", passcode)) {
+    return { success: false, error: "Invalid passcode for admin role" };
+  }
+  return withWrite((db) => {
+    const alert = db.stock_alerts.find((a) => a.id === id);
+    if (!alert) return { success: false, error: "Alert not found" };
+    alert.resolved = true;
+    return { success: true };
   });
 }
 
