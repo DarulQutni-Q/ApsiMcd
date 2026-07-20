@@ -10,7 +10,7 @@ import type { OrderStatus } from "@/types";
 
 export const dynamic = "force-dynamic";
 
-const VALID_STATUSES: OrderStatus[] = ["pending", "preparing", "ready", "completed", "cancelled"];
+const VALID_STATUSES: OrderStatus[] = ["pending", "preparing", "ready", "paid", "completed", "cancelled"];
 
 // GET: read orders, optionally filtered by ?status=pending,preparing
 export async function GET(request: Request) {
@@ -64,8 +64,11 @@ export async function PATCH(request: Request) {
     if (role === "kitchen" && !["preparing", "ready"].includes(status)) {
       return NextResponse.json({ error: "Kitchen can only update to preparing or ready" }, { status: 403 });
     }
-    if (role === "cashier" && !["completed", "cancelled"].includes(status)) {
-      return NextResponse.json({ error: "Cashier can only complete or cancel orders" }, { status: 403 });
+    if (role === "cashier" && !["paid", "cancelled"].includes(status)) {
+      return NextResponse.json({ error: "Cashier can only mark paid or cancel orders" }, { status: 403 });
+    }
+    if (role === "pickup" && !["completed", "cancelled"].includes(status)) {
+      return NextResponse.json({ error: "Pickup can only complete or cancel orders" }, { status: 403 });
     }
 
     // Kitchen may only mark an order "ready" once every item is checked off.

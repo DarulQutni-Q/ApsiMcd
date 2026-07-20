@@ -2,8 +2,8 @@
 -- Active Skills: PostgreSQL Schema Design, RLS Security, Data Modeling
 
  - 1. Create Enums
-CREATE TYPE user_role AS ENUM ('kitchen', 'cashier', 'admin');
-CREATE TYPE order_status AS ENUM ('pending', 'preparing', 'ready', 'completed');
+CREATE TYPE user_role AS ENUM ('kitchen', 'cashier', 'pickup', 'admin');
+CREATE TYPE order_status AS ENUM ('pending', 'preparing', 'ready', 'paid', 'completed', 'cancelled');
 
 -- 2. Create Tables
 CREATE TABLE users (
@@ -95,6 +95,7 @@ INSERT INTO promos (name, discount_percent, valid_days) VALUES
 INSERT INTO users (username, role, passcode) VALUES
 ('kitchen_master', 'kitchen', '111111'),
 ('cashier_front', 'cashier', '222222'),
+('pickup_handover', 'pickup', '333333'),
 ('admin_boss', 'admin', '999999');
 
 -- 5. Enable Realtime

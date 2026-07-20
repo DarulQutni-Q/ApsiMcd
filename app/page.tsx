@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Storefront, CookingPot, Receipt, ChartBar } from "@phosphor-icons/react";
+import { Storefront, CookingPot, Wallet, ShoppingBag, ChartBar } from "@phosphor-icons/react";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -32,18 +32,25 @@ const portals = [
     shortcut: "2",
   },
   {
-    href: "/cashier",
-    icon: Receipt,
-    label: "Cashier Register",
-    desc: "Pemrosesan pembayaran.",
+    href: "/payment",
+    icon: Wallet,
+    label: "Pembayaran",
+    desc: "Proses pembayaran pelanggan.",
     shortcut: "3",
+  },
+  {
+    href: "/pickup",
+    icon: ShoppingBag,
+    label: "Pengambilan",
+    desc: "Serahkan pesanan yang lunas.",
+    shortcut: "4",
   },
   {
     href: "/admin",
     icon: ChartBar,
     label: "Admin Dashboard",
     desc: "Analisis penjualan & revenue.",
-    shortcut: "4",
+    shortcut: "5",
   },
 ];
 
@@ -56,8 +63,9 @@ export default function Home() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "1") router.push("/kiosk");
       if (e.key === "2") router.push("/kitchen");
-      if (e.key === "3") router.push("/cashier");
-      if (e.key === "4") router.push("/admin");
+      if (e.key === "3") router.push("/payment");
+      if (e.key === "4") router.push("/pickup");
+      if (e.key === "5") router.push("/admin");
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);

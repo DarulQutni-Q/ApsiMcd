@@ -1,5 +1,5 @@
-export type UserRole = 'kitchen' | 'cashier' | 'admin';
-export type OrderStatus = 'pending' | 'preparing' | 'ready' | 'completed' | 'cancelled';
+export type UserRole = 'kitchen' | 'cashier' | 'pickup' | 'admin';
+export type OrderStatus = 'pending' | 'preparing' | 'ready' | 'paid' | 'completed' | 'cancelled';
 
 export interface User {
   id: string;

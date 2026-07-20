@@ -28,7 +28,7 @@ export default function CashierPage() {
 
   const fetchOrders = async () => {
     try {
-      const res = await fetch('/api/orders?status=ready', { cache: 'no-store' });
+      const res = await fetch('/api/orders?status=preparing,ready', { cache: 'no-store' });
       const { orders: data } = await res.json();
       if (!res.ok) throw new Error();
       setLastSync(Date.now());
@@ -74,7 +74,7 @@ export default function CashierPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           order_id: orderId, 
-          status: 'completed', 
+          status: 'paid', 
           passcode, 
           role: 'cashier',
           payment_method: paymentMethod 
@@ -127,7 +127,7 @@ export default function CashierPage() {
 
   return (
     <div className="flex min-h-[100dvh] w-full flex-col bg-background relative overflow-hidden">
-      <PageHeader title="Cashier Register" backHref="/" />
+      <PageHeader title="Pembayaran" backHref="/" />
 
       <AnimatePresence>
         {errorMsg && (
@@ -141,7 +141,7 @@ export default function CashierPage() {
       </AnimatePresence>
 
       <div className="fixed top-20 right-6 z-50">
-        <BadgeTag variant="count">{orders.length} Ready Orders</BadgeTag>
+        <BadgeTag variant="count">{orders.length} Orders to Pay</BadgeTag>
       </div>
 
       <LiveIndicator lastSync={lastSync} />
@@ -179,9 +179,9 @@ export default function CashierPage() {
                             >
                               <XCircle weight="bold" className="h-3.5 w-3.5" /> Batal
                             </button>
-                            <span className="rounded-full border border-[#7fbbb3]/30 bg-[#7fbbb3]/10 px-3 py-1 text-xs font-bold uppercase tracking-widest text-[#7fbbb3]">
-                              Ready to Pay
-                            </span>
+                             <span className="rounded-full border border-[#7fbbb3]/30 bg-[#7fbbb3]/10 px-3 py-1 text-xs font-bold uppercase tracking-widest text-[#7fbbb3]">
+                               {order.status === 'preparing' ? 'Menyiapkan' : 'Siap Bayar'}
+                             </span>
                           </div>
                         </div>
 
@@ -286,8 +286,8 @@ export default function CashierPage() {
                            disabled={method === 'Cash' && Number(cashReceived[order.id] || 0) < order.total_price}
                            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#7fbbb3] py-4 font-black text-background transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
                          >
-                           <CheckCircle weight="bold" className="h-5 w-5" />
-                           Selesaikan Transaksi
+                            <CheckCircle weight="bold" className="h-5 w-5" />
+                            Tandai Lunas
                          </button>
                        </div>
                      </div>
@@ -302,7 +302,7 @@ export default function CashierPage() {
               <div className="flex h-24 w-24 items-center justify-center rounded-full bg-muted/50 mb-6 shadow-inner">
                 <CheckCircle weight="light" className="h-12 w-12 opacity-50" />
               </div>
-              <p className="text-xl font-medium tracking-tight">No orders pending payment.</p>
+              <p className="text-xl font-medium tracking-tight">No orders to pay.</p>
             </div>
           )}
         </div>
