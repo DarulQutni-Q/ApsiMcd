@@ -130,11 +130,12 @@
     },
     {
       "id": "497c8aeb-836e-4039-92c8-05becfccb398",
-      "name": "Dar",
+      "name": "Sosis",
       "category": "Sides",
       "price": 40000,
       "image_url": "",
-      "is_active": true
+      "is_active": true,
+      "option_groups": []
     }
   ],
   "promos": [
